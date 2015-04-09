@@ -448,7 +448,6 @@ cl_program load_program(cl_context context, cl_device_id device, const char* fil
     size_t ret_val_size;
     cl_program program = 0;
     cl_int status = 0;
-    cl_build_status build_status;
 
     if(!fp) return 0;
 
@@ -578,7 +577,7 @@ int main(int argc, char **argv)
     cl_mem cl_a = 0, cl_b = 0, cl_res = 0;
     cl_kernel adder = 0;
     int num_total_devices = 0;
-    char devname[16][256] = {0};
+    char devname[16][256] = {{0}};
     size_t cb, work_size;
     cl_float a[DATA_SIZE], b[DATA_SIZE], res[DATA_SIZE];
     int i;
@@ -633,7 +632,7 @@ int main(int argc, char **argv)
     for (i = 0; i < num_total_devices; i++) {
         clGetDeviceInfo(devices[i], CL_DEVICE_NAME, 0, NULL, &cb);
         clGetDeviceInfo(devices[i], CL_DEVICE_NAME, cb, devname, 0);
-        printf("Device(%d/%d): %s\n", 1, num_total_devices, devname);
+        printf("Device(%d/%d): %s\n", i, num_total_devices, devname[i]);
     }
 
     queue = clCreateCommandQueue(context, devices[0], 0, 0);
