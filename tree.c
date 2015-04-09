@@ -413,9 +413,12 @@ void print_usage(void)
 
 void read_test_input(db *my_db)
 {
-    char key[1024], value[1024];
+    char key[1024] = {0}, value[1024] = {0};
+    int cnt = 0;
 
-    while (scanf("%s %s\n", key, value) != EOF) {
+    while (scanf("%[^\n]\n", key) != EOF) {
+        cnt++;
+        sprintf(value, "%d", cnt);
         db_put(my_db, key, value);
     }
 }
