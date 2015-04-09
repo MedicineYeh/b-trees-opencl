@@ -518,6 +518,15 @@ search:
     }
 }
 
+void read_test_input(db *my_db)
+{
+    char key[1024], value[1024];
+
+    while (scanf("%s %s\n", key, value) != EOF) {
+        db_put(my_db, key, value);
+    }
+}
+
 int main(int argc, char **argv)
 {
     db my_db;
@@ -529,6 +538,7 @@ int main(int argc, char **argv)
 
     db_init(&my_db, argv[1]);
     data = read_data(my_db.fp);
+    read_test_input(&my_db);
     db_put(&my_db, "hello", "world");
     char* value = db_get(&my_db, "hello");
     printf("%s\n", value);
