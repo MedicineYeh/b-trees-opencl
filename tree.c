@@ -437,7 +437,7 @@ void copy_back(db *db, unsigned char **path, uint64_t *node_addrs)
 {
     int i, j;
 
-    printf("copy back\n");
+    //printf("copy back\n");
 
     for (i = 0; i < _DEPTH; i++) {
         if (path[i] != NULL) {
@@ -475,7 +475,7 @@ search:
                 i -= SIZEOF_LONG;
                 cindex = from_big(path[index]+i);
                 check = data[cindex];
-                printf("check=%d\n", check); fflush(stdout);
+//                printf("check=%d\n", check); fflush(stdout);
                 copy_back(db, path, node_addrs);
                 if( check == 0 ){
                     return 1;
@@ -490,7 +490,7 @@ search:
             addr = from_big(path[index]+i);
             ++index;
             path[index] = (data + addr);
-            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
+//            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
             node_addrs[index] = addr;
             i = SIZEOF_LONG+1;
             goto search;
@@ -510,7 +510,7 @@ search:
             addr = from_big(path[index]+i);
             ++index;
             path[index] = (data + addr);
-            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
+//            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
             node_addrs[index] = addr;
             i = SIZEOF_LONG+1;
             goto search;
