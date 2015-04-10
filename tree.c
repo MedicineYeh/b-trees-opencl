@@ -522,11 +522,15 @@ void read_test_input(db *my_db)
 {
     char key[1024] = {0}, value[1024] = {0};
     int cnt = 0;
+    char *v = NULL;
 
     while (scanf("%[^\n]\n", key) != EOF) {
         cnt++;
         sprintf(value, "%d", cnt);
-        db_put(my_db, key, value);
+        v = db_get(my_db, key);
+        if (strcmp(value, v) != 0) {
+            printf("(%s, %s) while id is %s\n", key, v, value);
+        }
     }
 }
 
