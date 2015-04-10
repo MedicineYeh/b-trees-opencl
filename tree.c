@@ -437,6 +437,7 @@ void copy_back(db *db, unsigned char **path, uint64_t *node_addrs)
 {
     int i, j;
 
+    return ;
     //printf("copy back\n");
 
     for (i = 0; i < _DEPTH; i++) {
@@ -523,9 +524,11 @@ void read_test_input(db *my_db)
     char key[1024] = {0}, value[1024] = {0};
     int cnt = 0;
     char *v = NULL;
-
+    
     while (scanf("%[^\n]\n", key) != EOF) {
         cnt++;
+        db_search_in_mem(my_db, key, &cnt);
+        continue;
         sprintf(value, "%d", cnt);
         v = db_get(my_db, key);
         if (v!= NULL && strcmp(value, v) != 0) {
@@ -537,6 +540,8 @@ void read_test_input(db *my_db)
 int main(int argc, char **argv)
 {
     db my_db;
+    clock_t begin, end;
+    double time_spent;
 
     if (argc != 2) {
         print_usage();
@@ -545,7 +550,11 @@ int main(int argc, char **argv)
 
     db_init(&my_db, argv[1]);
     data = read_data(my_db.fp);
+    begin = clock();
     read_test_input(&my_db);
+    end = clock();
+    time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+    printf("time: %lf\n", time_spent);
     db_put(&my_db, "hello", "world");
     char* value = db_get(&my_db, "hello");
     printf("%s\n", value);
