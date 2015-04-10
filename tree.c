@@ -16,7 +16,7 @@
  * Also, the root address must instead be written to and searched for at the end.
  */
 
-#define DATA_SIZE 16
+#define DATA_SIZE 10000
 #include <stdio.h>
 #include <stdlib.h>    
 #include <stdint.h>
@@ -39,7 +39,7 @@ typedef struct db db;
 #define SIZEOF_LONG sizeof(uint64_t)
 #define _HASH 128
 #define _ORDER 99
-#define _WIDTH 1+_HASH*_ORDER+SIZEOF_LONG*(_ORDER+1)
+#define _WIDTH (1+_HASH*_ORDER+SIZEOF_LONG*(_ORDER+1))
 #define _DEPTH 10
 #define _MAX 0xf4240
 
@@ -73,6 +73,18 @@ int db_unlock(db *);
 void db_close(db *);
 void print_usage(void);
 cl_program load_program(cl_context, cl_device_id, const char *);
+
+cl_int err = 0;
+cl_uint num = 0;
+cl_platform_id *platforms = NULL;
+cl_context_properties prop[3] = {0};
+cl_context context = 0;
+cl_device_id *devices = NULL;
+cl_command_queue queue = 0;
+cl_program program = 0;
+cl_mem cl_a = 0, cl_b = 0, cl_c = 0, cl_d = 0, cl_e = 0, cl_f = 0;
+cl_kernel adder = 0;
+int data_length = 0;
 
 #ifdef LOCK
 int db_lock(db* db) {
@@ -435,6 +447,7 @@ unsigned char *read_data(FILE *fp)
     // read program source
     data = (char *)malloc(length);
     fread(data, sizeof(char), length, fp);
+    data_length = length;
 
     return data;
 }
@@ -484,6 +497,7 @@ void copy_back(db *db, unsigned char **path, uint64_t *node_addrs)
     int i, j;
 
     //printf("copy back\n");
+    return ;
 
     for (i = 0; i < _DEPTH; i++) {
         if (path[i] != NULL) {
@@ -564,21 +578,135 @@ search:
     }
 }
 
+double time_spent = 0.0;
+uint64_t db_search_in_opencl(db *db, unsigned char *key, int *r_index)
+{
+    int i, j;
+    size_t work_size;
+    int r_value[DATA_SIZE] = {0};
+    unsigned char path[_WIDTH * _DEPTH * DATA_SIZE];
+    uint64_t node_addrs[_DEPTH * DATA_SIZE];
+    clock_t begin, end;
+
+    for (i = 0; i < _DEPTH * DATA_SIZE; i++) {
+        node_addrs[i] = 0;
+    }
+    for (i = 0; i < _WIDTH * _DEPTH * DATA_SIZE; i++) {
+        path[i] = 0;
+    }
+
+    cl_a = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(cl_char) * _HASH * DATA_SIZE, key, NULL);
+    cl_b = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(cl_int) * DATA_SIZE, r_index, NULL);
+    cl_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(cl_int) * DATA_SIZE, r_value, NULL);
+    cl_d = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(cl_char) * data_length, data, NULL);
+    cl_e = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(cl_char) * _WIDTH * _DEPTH * DATA_SIZE, db->path, NULL);
+    cl_f = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(cl_ulong) * _DEPTH * DATA_SIZE, db->node_addrs, NULL);
+    if (cl_a == 0 || 
+        cl_b == 0 || 
+        cl_c == 0 ||
+        cl_d == 0 ||
+        cl_e == 0 ||
+        cl_f == 0) {
+        printf("Can't create OpenCL buffer\n");
+        goto release;
+    }
+    checkErr(clEnqueueWriteBuffer(queue, cl_a, CL_TRUE, 0, sizeof(cl_char) * _HASH * DATA_SIZE, key, 0, 0, 0),
+            printf("ERROR ! WRITE BUFFER\n");
+            goto release;);
+    checkErr(clEnqueueWriteBuffer(queue, cl_b, CL_TRUE, 0, sizeof(cl_int) * DATA_SIZE, r_index, 0, 0, 0),
+            printf("ERROR ! WRITE BUFFER\n");
+            goto release;);
+    checkErr(clEnqueueWriteBuffer(queue, cl_d, CL_TRUE, 0, sizeof(cl_char) * data_length, data, 0, 0, 0),
+            printf("ERROR ! WRITE BUFFER\n");
+            goto release;);
+    checkErr(clEnqueueWriteBuffer(queue, cl_e, CL_TRUE, 0, sizeof(cl_char) * _WIDTH * _DEPTH * DATA_SIZE, path, 0, 0, 0),
+            printf("ERROR ! WRITE BUFFER\n");
+            goto release;);
+    checkErr(clEnqueueWriteBuffer(queue, cl_f, CL_TRUE, 0, sizeof(cl_ulong) * _DEPTH * DATA_SIZE, node_addrs, 0, 0, 0),
+            printf("ERROR ! WRITE BUFFER\n");
+            goto release;);
+
+    adder = clCreateKernel(program, "adder", &err);
+    if (err == CL_INVALID_KERNEL_NAME) printf("CL_INVALID_KERNEL_NAME\n");
+    checkExit(adder, "Can't load kernel\n");
+
+    clSetKernelArg(adder, 0, sizeof(cl_mem), &cl_a);
+    clSetKernelArg(adder, 1, sizeof(cl_mem), &cl_b);
+    clSetKernelArg(adder, 2, sizeof(cl_mem), &cl_c);
+    clSetKernelArg(adder, 3, sizeof(cl_mem), &cl_d);
+    clSetKernelArg(adder, 4, sizeof(cl_mem), &cl_e);
+    clSetKernelArg(adder, 5, sizeof(cl_mem), &cl_f);
+
+    work_size = DATA_SIZE;
+
+    cl_event event;
+    begin = clock();
+    checkErr(clEnqueueNDRangeKernel(queue, adder, 1, 0, &work_size, 0, 0, 0, &event),
+             printf("Can't enqueue kernel\n");
+            );
+    clWaitForEvents(1, &event);
+    end = clock();
+
+    checkErr(clEnqueueReadBuffer(queue, cl_b, CL_TRUE, 0, sizeof(cl_int) * DATA_SIZE, r_index, 0, 0, 0),
+             printf("Can't enqueue read buffer\n");
+            );
+    checkErr(clEnqueueReadBuffer(queue, cl_c, CL_TRUE, 0, sizeof(cl_int) * DATA_SIZE, r_value, 0, 0, 0),
+             printf("Can't enqueue read buffer\n");
+            );
+    checkErr(clEnqueueReadBuffer(queue, cl_e, CL_TRUE, 0, sizeof(cl_char) * _WIDTH * _DEPTH * DATA_SIZE, path, 0, 0, 0),
+             printf("Can't enqueue read buffer\n");
+            );
+    checkErr(clEnqueueReadBuffer(queue, cl_f, CL_TRUE, 0, sizeof(cl_ulong) * _DEPTH * DATA_SIZE, node_addrs, 0, 0, 0),
+             printf("Can't enqueue read buffer\n");
+            );
+
+    for (i = 0; i < DATA_SIZE; i++) {
+//        printf("%d, %d\n", r_value[i], r_index[i]);
+    }
+//    printf("\n");
+    time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
+release:
+    clReleaseKernel(adder);
+    clReleaseMemObject(cl_a);
+    clReleaseMemObject(cl_b);
+    clReleaseMemObject(cl_c);
+    clReleaseMemObject(cl_d);
+    clReleaseMemObject(cl_e);
+    clReleaseMemObject(cl_f);
+
+    return 0;
+}
+
+void read_test_input(db *my_db)
+{
+    char key[DATA_SIZE * _HASH] = {0}, value[1024] = {0};
+    int cnt = 0, r_index[DATA_SIZE] = {0}, i;
+    char *v = NULL;
+    char c;
+
+    while (scanf("%[^\n]\n", &key[(cnt % 10) * _HASH]) != EOF) {
+        cnt++;
+        if (cnt % DATA_SIZE == 0) {
+            for (i = 0; i < DATA_SIZE; i++)
+                r_index[i] = 0;
+            db_search_in_opencl(my_db, key, r_index);
+        }
+        /*
+        sprintf(value, "%d", cnt);
+        v = db_get(my_db, key);
+        if (v!= NULL && strcmp(value, v) != 0) {
+            printf("(%s, %s) while id is %s\n", key, v, value);
+        }
+      */  
+    }   
+    printf("elapsed: %lf\n", time_spent);
+}
+
 int main(int argc, char **argv)
 {
-    cl_int err = 0;
-    cl_uint num = 0;
-    cl_platform_id *platforms = NULL;
-    cl_context_properties prop[3] = {0};
-    cl_context context = 0;
-    cl_device_id *devices = NULL;
-    cl_command_queue queue = 0;
-    cl_program program = 0;
-    cl_mem cl_a = 0, cl_b = 0, cl_res = 0;
-    cl_kernel adder = 0;
     int num_total_devices = 0;
     char devname[16][256] = {{0}};
-    size_t cb, work_size;
+    size_t cb;
     cl_float a[DATA_SIZE], b[DATA_SIZE], res[DATA_SIZE];
     int i;
     db my_db;
@@ -641,55 +769,10 @@ int main(int argc, char **argv)
     program = load_program(context, devices[0], "shader.cl");
     checkExit(program, "Fail to build program\n");
 
-    cl_a = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(cl_float) * DATA_SIZE, &a[0], NULL);
-    cl_b = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(cl_float) * DATA_SIZE, &b[0], NULL);
-    cl_res = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(cl_float) * DATA_SIZE, &res[0], NULL);
-    if (cl_a == 0 || 
-        cl_b == 0 || 
-        cl_res == 0) {
-        printf("Can't create OpenCL buffer\n");
-        goto release;
-    }
-
-    checkErr(clEnqueueWriteBuffer(queue, cl_a, CL_TRUE, 0, 
-                                  sizeof(cl_float) * DATA_SIZE, a, 0, 0, 0),
-             printf("ERROR ! WRITE BUFFER 1\n");
-             goto release;
-            );
-    checkErr(clEnqueueWriteBuffer(queue, cl_b, CL_TRUE, 0, 
-                                  sizeof(cl_float) * DATA_SIZE, b, 0, 0, 0),
-             printf("ERROR ! WRITE BUFFER 2\n");
-             goto release;
-            );
-
-    adder = clCreateKernel(program, "adder", &err);
-    if (err == CL_INVALID_KERNEL_NAME) printf("CL_INVALID_KERNEL_NAME\n");
-    checkExit(adder, "Can't load kernel\n");
-
-    clSetKernelArg(adder, 0, sizeof(cl_mem), &cl_a);
-    clSetKernelArg(adder, 1, sizeof(cl_mem), &cl_b);
-    clSetKernelArg(adder, 2, sizeof(cl_mem), &cl_res);
-
-    work_size = DATA_SIZE;
-
-    checkErr(clEnqueueNDRangeKernel(queue, adder, 1, 0, &work_size, 0, 0, 0, 0),
-             printf("Can't enqueue kernel\n");
-            );
-    checkErr(clEnqueueReadBuffer(queue, cl_res, CL_TRUE, 0, sizeof(cl_float) * DATA_SIZE, res, 0, 0, 0),
-             printf("Can't enqueue read buffer\n");
-            );
-
-    for (i = 0; i < DATA_SIZE; i++) {
-        printf("%f %f %f\n", a[i], b[i], res[i]);
-    }
-    printf("------\n");
+    read_test_input(&my_db);
 
 release:
-    clReleaseKernel(adder);
     clReleaseProgram(program);
-    clReleaseMemObject(cl_a);
-    clReleaseMemObject(cl_b);
-    clReleaseMemObject(cl_res);
     clReleaseCommandQueue(queue);
     clReleaseContext(context);
 
