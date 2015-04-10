@@ -528,7 +528,7 @@ void read_test_input(db *my_db)
         cnt++;
         sprintf(value, "%d", cnt);
         v = db_get(my_db, key);
-        if (strcmp(value, v) != 0) {
+        if (v!= NULL && strcmp(value, v) != 0) {
             printf("(%s, %s) while id is %s\n", key, v, value);
         }
     }
