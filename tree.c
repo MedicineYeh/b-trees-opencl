@@ -581,6 +581,7 @@ search:
 double time_spent = 0.0;
 uint64_t db_search_in_opencl(db *db, unsigned char *key, int *r_index)
 {
+    cl_event event;
     int i, j;
     size_t work_size;
     int r_value[DATA_SIZE] = {0};
@@ -622,9 +623,10 @@ uint64_t db_search_in_opencl(db *db, unsigned char *key, int *r_index)
     checkErr(clEnqueueWriteBuffer(queue, cl_e, CL_TRUE, 0, sizeof(cl_char) * _WIDTH * _DEPTH * DATA_SIZE, path, 0, 0, 0),
             printf("ERROR ! WRITE BUFFER\n");
             goto release;);
-    checkErr(clEnqueueWriteBuffer(queue, cl_f, CL_TRUE, 0, sizeof(cl_ulong) * _DEPTH * DATA_SIZE, node_addrs, 0, 0, 0),
+    checkErr(clEnqueueWriteBuffer(queue, cl_f, CL_TRUE, 0, sizeof(cl_ulong) * _DEPTH * DATA_SIZE, node_addrs, 0, 0, &event),
             printf("ERROR ! WRITE BUFFER\n");
             goto release;);
+    clWaitForEvents(1, &event);
 
     adder = clCreateKernel(program, "adder", &err);
     if (err == CL_INVALID_KERNEL_NAME) printf("CL_INVALID_KERNEL_NAME\n");
@@ -639,7 +641,6 @@ uint64_t db_search_in_opencl(db *db, unsigned char *key, int *r_index)
 
     work_size = DATA_SIZE;
 
-    cl_event event;
     begin = clock();
     checkErr(clEnqueueNDRangeKernel(queue, adder, 1, 0, &work_size, 0, 0, 0, &event),
              printf("Can't enqueue kernel\n");
