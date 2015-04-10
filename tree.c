@@ -57,6 +57,9 @@ uint64_t db_search(db *, unsigned char *, int *);
 unsigned char* db_get(db *, unsigned char *);
 void db_init(db *, const char *);
 void db_delete(db *, unsigned char*);
+unsigned char *read_data(FILE *fp);
+uint64_t db_search_in_mem(db *, unsigned char *, int *);
+unsigned char *data = NULL;
 
 #ifdef LOCK
 int db_lock(db *);
@@ -312,8 +315,8 @@ unsigned char* db_get(db* db, unsigned char* key)
         memset(key,0x61,_HASH+1);
         strncpy(key,okey,strlen(okey));
     }
-    if( !db_search(db,key,&index) ){
-        int i = SIZEOF_LONG+1;
+    if( !db_search_in_mem(db,key,&index) ){
+        int i = SIZEOF_LONG+1, j;
         for( ; i<_WIDTH; i+=(SIZEOF_LONG+_HASH) ){
             if( !strncmp(db->path[index]+i,key,_HASH) ){
                 i -= SIZEOF_LONG;
@@ -411,6 +414,110 @@ void print_usage(void)
     printf("        ./tree ./test.db\n");
 }
 
+unsigned char *read_data(FILE *fp)
+{
+    size_t length;
+    unsigned char *data;
+
+    if(!fp) return 0;
+
+    // get file length
+    fseek(fp, 0, SEEK_END);
+    length = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    // read program source
+    data = (char *)malloc(length);
+    fread(data, sizeof(char), length, fp);
+
+    return data;
+}
+
+void copy_back(db *db, unsigned char **path, uint64_t *node_addrs)
+{
+    int i, j;
+
+    printf("copy back\n");
+
+    for (i = 0; i < _DEPTH; i++) {
+        if (path[i] != NULL) {
+            for (j = 0; j < _WIDTH; j++)
+                db->path[i][j] = path[i][j];
+        }
+        db->node_addrs[i] = node_addrs[i];
+    }
+}
+
+uint64_t db_search_in_mem(db *db, unsigned char* key, int* r_index)
+{
+    if( _HASH > strlen(key) ){
+        unsigned char* okey = key;
+        key = malloc(_HASH+1);
+        memset(key,0x61,_HASH+1);
+        strncpy(key,okey,strlen(okey));
+    }
+    uint64_t r_addr, addr, cindex;
+    int i = SIZEOF_LONG+1, j = 0;
+    unsigned char isleaf, check;
+    int index = 0;
+    unsigned char *path[_DEPTH] = {0};
+    uint64_t node_addrs[_DEPTH] = {0};
+
+    r_addr = *(long *)(data + 0);
+    path[index] = (data + r_addr);
+    node_addrs[index] = r_addr;
+search:
+    isleaf = path[index][0];
+    for( ; i<_WIDTH; i+=(_HASH+SIZEOF_LONG) ){
+        if( !strncmp(path[index]+i,key,_HASH) ){
+            if( isleaf ){
+                *r_index = index;
+                i -= SIZEOF_LONG;
+                cindex = from_big(path[index]+i);
+                check = data[cindex];
+                printf("check=%d\n", check); fflush(stdout);
+                copy_back(db, path, node_addrs);
+                if( check == 0 ){
+                    return 1;
+                }
+                return 0;
+            }
+            if( index >= _DEPTH ){
+                *r_index = 0;
+                return -1;
+            }
+            i += _HASH;
+            addr = from_big(path[index]+i);
+            ++index;
+            path[index] = (data + addr);
+            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
+            node_addrs[index] = addr;
+            i = SIZEOF_LONG+1;
+            goto search;
+        }
+        if( strncmp(path[index]+i,key,_HASH) > 0 ||
+                path[index][i] == 0 ){
+            if( isleaf ){
+                *r_index = index;
+                copy_back(db, path, node_addrs);
+                return 1;
+            }
+            if( index >= _DEPTH ){
+                *r_index = 0;
+                return -1;
+            }
+            i -= SIZEOF_LONG;
+            addr = from_big(path[index]+i);
+            ++index;
+            path[index] = (data + addr);
+            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
+            node_addrs[index] = addr;
+            i = SIZEOF_LONG+1;
+            goto search;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     db my_db;
@@ -421,10 +528,13 @@ int main(int argc, char **argv)
     }
 
     db_init(&my_db, argv[1]);
+    data = read_data(my_db.fp);
     db_put(&my_db, "hello", "world");
     char* value = db_get(&my_db, "hello");
     printf("%s\n", value);
     db_close(&my_db);
+    free(data);
+
     return 0; 
 }
 
