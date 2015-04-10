@@ -33,7 +33,7 @@ typedef unsigned char uint8_t;
 typedef struct db db;
 
 #define SIZEOF_LONG sizeof(uint64_t)
-#define _HASH 33
+#define _HASH 128
 #define _ORDER 99
 #define _WIDTH 1+_HASH*_ORDER+SIZEOF_LONG*(_ORDER+1)
 #define _DEPTH 10
