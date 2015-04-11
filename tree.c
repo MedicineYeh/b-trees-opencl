@@ -661,9 +661,12 @@ uint64_t db_search_in_opencl(db *db, unsigned char *key, int *r_index)
              printf("Can't enqueue read buffer\n");
             );
 
+    /*
     for (i = 0; i < DATA_SIZE; i++) {
-//        printf("%d, %d\n", r_value[i], r_index[i]);
-    }
+        for (j = 0; j < 10; j++)
+            printf("%x ", node_addrs[i * _DEPTH + j]);
+        printf("%d, %d\n", r_value[i], r_index[i]);
+    }*/
 //    printf("\n");
     time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
 release:

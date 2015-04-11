@@ -43,80 +43,88 @@ void copy(__global unsigned char *a, __global unsigned char *b, int size)
         a[i] = b[i];
 }
 
-ulong db_search_in_mem(__global unsigned char* key, __global int* r_index, __global unsigned char *data, __global unsigned char *path, __global ulong *node_addrs)
+ulong db_search_in_mem(
+        __global unsigned char *key, 
+        __global int *r_index, 
+        __global unsigned char *data, 
+        __global unsigned char *path, 
+        __global ulong *node_addrs)
 {
     ulong r_addr, addr, cindex;
     int i = SIZEOF_LONG+1, j = 0;
     unsigned char isleaf, check;
     int index = 0;
+    char flag = 0;
+    int cmp_reault = 0;
 
     r_addr = from_little(data);
     copy(path + index * _WIDTH, data + r_addr, _WIDTH);
     node_addrs[index] = r_addr;
-search:
-    isleaf = path[index * _WIDTH];
-    for( ; i<_WIDTH; i+=(_HASH+SIZEOF_LONG) ){
-        if (!strncmp(&path[index * _WIDTH + i], key, _HASH) ){
-            if( isleaf ){
-                *r_index = index;
-                i -= SIZEOF_LONG;
-                cindex = from_big(&path[index * _WIDTH + i]);
-                check = data[cindex];
-//                printf("check=%d\n", check); fflush(stdout);
-                if( check == 0 ){
+    do {
+        flag = 0;
+        isleaf = path[index * _WIDTH];
+        for( ; i<_WIDTH && flag == 0; i+=(_HASH+SIZEOF_LONG) ){
+            cmp_reault = strncmp(&path[index * _WIDTH + i], key, _HASH);
+            if (cmp_reault == 0){
+                if( isleaf ){
+                    *r_index = index;
+                    i -= SIZEOF_LONG;
+                    cindex = from_big(&path[index * _WIDTH + i]);
+                    check = data[cindex];
+                    if( check == 0 ){
+                        return 1;
+                    }
+                    return 0;
+                }
+                if( index >= _DEPTH ){
+                    *r_index = 0;
+                    return -1;
+                }
+                i += _HASH;
+                addr = from_big(&path[index * _WIDTH + i]);
+                ++index;
+                copy(path + index * _WIDTH, data + addr, _WIDTH);
+                node_addrs[index] = addr;
+                i = SIZEOF_LONG+1;
+                flag = 1;
+            }
+            cmp_reault = strncmp(&path[index * _WIDTH + i], key, _HASH);
+            if (flag == 0 && (cmp_reault > 0 ||
+                        path[index * _WIDTH + i] == 0) ){
+                if( isleaf ){
+                    *r_index = index;
                     return 1;
                 }
-                return 0;
+                if( index >= _DEPTH ){
+                    *r_index = 0;
+                    return -1;
+                }
+                i -= SIZEOF_LONG;
+                addr = from_big(&path[index * _WIDTH + i]);
+                ++index;
+                copy(path + index * _WIDTH, data + addr, _WIDTH);
+                node_addrs[index] = addr;
+                i = SIZEOF_LONG+1;
+                flag = 1;
             }
-            if( index >= _DEPTH ){
-                *r_index = 0;
-                return -1;
-            }
-            i += _HASH;
-            addr = from_big(&path[index * _WIDTH + i]);
-            ++index;
-            copy(path + index * _WIDTH, data + addr, _WIDTH);
-//            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
-            node_addrs[index] = addr;
-            i = SIZEOF_LONG+1;
-            goto search;
         }
-        if (strncmp(&path[index * _WIDTH + i], key, _HASH) > 0 ||
-                path[index * _WIDTH + i] == 0 ){
-            if( isleaf ){
-                *r_index = index;
-                return 1;
-            }
-            if( index >= _DEPTH ){
-                *r_index = 0;
-                return -1;
-            }
-            i -= SIZEOF_LONG;
-            addr = from_big(&path[index * _WIDTH + i]);
-            ++index;
-            copy(path + index * _WIDTH, data + addr, _WIDTH);
-//            printf("path=%x %x %x %x\n", path[index][0], path[index][1], path[index][2], path[index][3]); fflush(stdout);
-            node_addrs[index] = addr;
-            i = SIZEOF_LONG+1;
-            goto search;
-        }
-    }
+    }while(flag);
 }
 
 __kernel void adder(
-__global unsigned char *key, 
-__global int *r_index, 
-__global int *r_value, 
-__global unsigned char *data, 
-__global unsigned char *path, 
-__global ulong *node_addrs)
+        __global unsigned char *key, 
+        __global int *r_index, 
+        __global int *r_value, 
+        __global unsigned char *data, 
+        __global unsigned char *path, 
+        __global ulong *node_addrs)
 {
-	int idx = get_global_id(0);
-    
+    int idx = get_global_id(0);
+
     r_value[idx] = db_search_in_mem(
-                                    &key[idx * _HASH], 
-                                    &r_index[idx], 
-                                    data, 
-                                    &path[idx * _WIDTH * _DEPTH], 
-                                    &node_addrs[idx * _DEPTH]);
+            &key[idx * _HASH], 
+            &r_index[idx], 
+            data, 
+            &path[idx * _WIDTH * _DEPTH], 
+            &node_addrs[idx * _DEPTH]);
 }
